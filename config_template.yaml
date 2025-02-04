@@ -1,0 +1,19 @@
+account:
+  username: your_username
+  email_or_phone: your_email_or_phone
+  password: your_password
+
+browser:
+  browser: edge # edge, chrome, firefox
+  headless: true  
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko); Chrome/121.0.0.0 Safari/537.36"
+
+bot:
+  max_posts: 50        
+  refresh_interval: 60.0  
+  filter_tags:
+    - avemujica
+    - mygo
+  trigger: like # like, bookmark
+  save_path: "./data"
+
