@@ -1,3 +1,6 @@
 .venv
 .DS_Store
 config.yaml
+data/*
+bk
+bk/*

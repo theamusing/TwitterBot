@@ -2,7 +2,9 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 import time
-import configparser
+import localstorage
+
+MAX_RECENT_LIKES = 500  # local storage max likes
 
 class TwitterBox:
     def __init__(self, config):
@@ -15,11 +17,12 @@ class TwitterBox:
         self.user_agent = config['browser']['user_agent']
         self.max_post_num = config['bot']['max_posts']
         self.refresh_interval = config['bot']['refresh_interval']
+        self.current_refresh_interval = self.refresh_interval
         self.filter_tags = config['bot']['filter_tags']
         self.trigger = config['bot']['trigger']
         self.save_path = config['bot']['save_path']
 
-        self.last_post_id = None
+        self.saved_posts_id = localstorage.load_recent_ids(MAX_RECENT_LIKES)
 
         # init driver
         self.options = None
@@ -54,12 +57,23 @@ class TwitterBox:
         try:
             self._login()
             while True:
-                self._get_likes(self.max_post_num)
-                time.sleep(self.refresh_interval)
+                collected_posts, collected_ids = self._get_posts(self.max_post_num)
+                self._save_posts(collected_posts, collected_ids)
+                self._smart_sleep(collected_posts)
+
         except Exception as e:
             print('Bot stopped running. Error occured:',e)
+            self.driver.quit()
             return
     
+    def refresh(self):
+        driver = self.driver
+        driver.refresh()
+
+    def clear_cache(self):
+        self.saved_posts_id.clear()
+        localstorage.save_recent_ids(self.saved_posts_id)
+
     def _login(self):
         driver = self.driver
         TWITTER_USERNAME = self.username
@@ -90,39 +104,56 @@ class TwitterBox:
         password_input.send_keys(Keys.RETURN)
         time.sleep(3)
 
-    def _get_likes(self, max_post_num):
+    def _get_posts(self, max_post_num):
         driver = self.driver
         TWITTER_USERNAME = self.username
 
-        print("Fetching liked tweets...")
-        driver.get(f"https://twitter.com/{TWITTER_USERNAME}/likes")
+        print("Fetching tweets...")
+
+        # get posts URL
+        if self.trigger == "like":
+            posts_url = f"https://twitter.com/{TWITTER_USERNAME}/likes"
+        elif self.trigger == "bookmark":
+            posts_url = "https://twitter.com/i/bookmarks"
+        else:
+            raise Exception("Unsupported trigger")
+        
+        driver.get(posts_url)
         time.sleep(5)
 
-        liked_tweets = []
+        collected_tweets = []
         collected_tweet_ids = []
         scroll_attempts = 0
         max_scrolls = 100 
+        get_new = True
 
-        while len(liked_tweets) < max_post_num and scroll_attempts < max_scrolls:
+        while get_new and len(collected_tweets) < max_post_num and scroll_attempts < max_scrolls:
             tweets = driver.find_elements(By.XPATH, '//article[@data-testid="tweet"]')
+            get_new = False
             for tweet in tweets:
-
+                
                 # get tweet id
                 tweet_link = tweet.find_element(By.XPATH, './/a[contains(@href, "/status/")]').get_attribute("href")
                 tweet_id = tweet_link.split("/")[-1] 
+                print(f"Checking tweet {tweet_id}")
 
-                if(tweet_id == self.last_post_id):
-                    scroll_attempts = max_scrolls # stop scrolling
+                if tweet_id in self.saved_posts_id:
+                    scroll_attempts = max_scrolls
                     break
-
                 if tweet_id in collected_tweet_ids:
                     continue 
-                
+                get_new = True
+
                 # get text content
                 try:
                     text = tweet.find_element(By.XPATH, './/div[@data-testid="tweetText"]').text
                 except:
                     text = ""
+
+                # filter by tags
+                if self.filter_tags:
+                    if not any(tag in text for tag in self.filter_tags):
+                        continue
 
                 # get images URLs
                 images = tweet.find_elements(By.XPATH, './/img[contains(@src, "twimg.com/media")]')
@@ -142,7 +173,7 @@ class TwitterBox:
                 }
                 print(f"Collected tweet {tweet_id}")
 
-                liked_tweets.append(tweet_data)
+                collected_tweets.append(tweet_data)
                 collected_tweet_ids.append(tweet_id)
 
             # scroll down to load more tweets
@@ -150,16 +181,34 @@ class TwitterBox:
             time.sleep(1)
             scroll_attempts += 1
 
-        if(collected_tweet_ids):
-            # save last post id
-            self.last_post_id = collected_tweet_ids[0]
+        self._log(collected_tweets)
 
-        print(f"Collected {len(liked_tweets)} liked tweets.")
+        return collected_tweets, collected_tweet_ids
 
-        self._save_likes(liked_tweets)
+    def _save_posts(self, collected_posts, collected_ids):
+        # update recent likes
+        for id in collected_ids[::-1]:
+            self.saved_posts_id.append(id)
+        while len(self.saved_posts_id) > MAX_RECENT_LIKES:
+            self.saved_posts_id.popleft()
 
-    def _save_likes(self, liked_tweets):
-        for tweet in liked_tweets:
+        # save recent likes
+        localstorage.save_recent_ids(self.saved_posts_id) 
+
+        # save posts
+        localstorage.save_posts(collected_posts, self.save_path)
+        
+    def _smart_sleep(self, get_new):
+        if get_new:
+            self.current_refresh_interval = max(self.refresh_interval * 0.2, self.current_refresh_interval // 2)
+        else:
+            self.current_refresh_interval = min(self.current_refresh_interval * 2, self.refresh_interval * 2)
+        print(f"Sleeping for {self.current_refresh_interval} seconds...")
+        time.sleep(self.current_refresh_interval)
+
+    def _log(self, collected_tweets):
+        print(f"Collected {len(collected_tweets)} liked tweets.")
+        for tweet in collected_tweets:
             text = tweet["text"]
             images = tweet["images"]
             timestamp = tweet["timestamp"]

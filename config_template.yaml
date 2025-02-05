@@ -11,9 +11,7 @@ browser:
 bot:
   max_posts: 50        
   refresh_interval: 60.0  
-  filter_tags:
-    - avemujica
-    - mygo
+  filter_tags: []
   trigger: like # like, bookmark
   save_path: "./data"
 
