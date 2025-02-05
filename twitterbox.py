@@ -37,7 +37,8 @@ class TwitterBox:
         else:
             raise Exception('Unsupported browser')
         
-        self.options.add_argument(self.user_agent)
+        if self.user_agent:
+            self.options.add_argument(self.user_agent)
         if self.headless:
             self.options.add_argument("--headless")
 
@@ -151,10 +152,12 @@ class TwitterBox:
                     text = ""
 
                 # filter by tags
+                print(f"Filter tags: {self.filter_tags}")
+                print(f"Tweet text: {text}")
                 if self.filter_tags:
                     if not any(tag in text for tag in self.filter_tags):
                         continue
-
+                
                 # get images URLs
                 images = tweet.find_elements(By.XPATH, './/img[contains(@src, "twimg.com/media")]')
                 image_urls = [img.get_attribute("src") for img in images]
