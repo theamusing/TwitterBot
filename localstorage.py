@@ -22,8 +22,9 @@ def save_recent_ids(recent_likes):
         print(f"Save recent ids fail: {e}")
 
 def save_posts(posts, storage_path):
-    storage_dir = os.path.dirname(f"{storage_path}/{LOCAL_POSTS_FOLDER}")
+    storage_dir = os.path.join(storage_path, LOCAL_POSTS_FOLDER)
     os.makedirs(storage_dir, exist_ok=True)
+    print(f"Saving posts to {storage_dir}")
 
     for post in posts:
         post_id = post["tweet_id"]
@@ -33,6 +34,7 @@ def save_posts(posts, storage_path):
         # save images
         for i, url in enumerate(image_urls):
             image_path = f"{storage_dir}/{post_id}_{safe_timestamp}_{i}.jpg"
+            print(f"Downloading image {i+1}/{len(image_urls)} for post {post_id}")
             download_image(url, image_path)
     
 def download_image(url, path):

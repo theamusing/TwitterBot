@@ -2,5 +2,5 @@
 .DS_Store
 config.yaml
 data/*
+!data/.gitkeep
 bk
-bk/*
