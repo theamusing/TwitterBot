@@ -10,4 +10,5 @@
     3. Run 'python main.py'.
 
 ## Future works
-    Add notifications and automatic like and download for selected users. 
+    Add notifications.
+    Add image content description.(Using api)
