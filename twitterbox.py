@@ -4,7 +4,8 @@ from selenium.webdriver.common.keys import Keys
 import time
 import localstorage
 
-MAX_RECENT_LIKES = 500  # local storage max likes
+MAX_RECENT_IDS = 500  # local storage max likes
+# MAX_AUTOLIKED_IDS = 100  # local storage max autolikes
 
 class TwitterBox:
     def __init__(self, config):
@@ -20,9 +21,10 @@ class TwitterBox:
         self.current_refresh_interval = self.refresh_interval
         self.filter_tags = config['bot']['filter_tags']
         self.trigger = config['bot']['trigger']
+        self.autolike = config['bot']['autolike']
+        self.max_autolike_post_num = config['bot']['max_autolike_posts']
+        self.autolike_users = config['bot']['autolike_users']
         self.save_path = config['bot']['save_path']
-
-        self.saved_posts_id = localstorage.load_recent_ids(MAX_RECENT_LIKES)
 
         # init driver
         self.options = None
@@ -58,8 +60,11 @@ class TwitterBox:
         try:
             self._login()
             while True:
-                collected_posts, collected_ids = self._get_posts(self.max_post_num)
-                self._save_posts(collected_posts, collected_ids)
+                self._autolike_posts(self.max_autolike_post_num)
+
+                collected_posts = self._get_posts(self.max_post_num)
+                self._save_posts(collected_posts)
+
                 self._smart_sleep(collected_posts)
 
         except Exception as e:
@@ -70,10 +75,6 @@ class TwitterBox:
     def refresh(self):
         driver = self.driver
         driver.refresh()
-
-    def clear_cache(self):
-        self.saved_posts_id.clear()
-        localstorage.save_recent_ids(self.saved_posts_id)
 
     def _login(self):
         driver = self.driver
@@ -122,6 +123,7 @@ class TwitterBox:
         driver.get(posts_url)
         time.sleep(5)
 
+        saved_posts_id = localstorage.load_recent_ids(MAX_RECENT_IDS)
         collected_tweets = []
         collected_tweet_ids = []
         scroll_attempts = 0
@@ -138,7 +140,7 @@ class TwitterBox:
                 tweet_id = tweet_link.split("/")[-1] 
                 print(f"Checking tweet {tweet_id}")
 
-                if tweet_id in self.saved_posts_id:
+                if tweet_id in saved_posts_id:
                     scroll_attempts = max_scrolls
                     break
                 if tweet_id in collected_tweet_ids:
@@ -186,19 +188,68 @@ class TwitterBox:
 
         self._log(collected_tweets)
 
-        return collected_tweets, collected_tweet_ids
-
-    def _save_posts(self, collected_posts, collected_ids):
         # update recent likes
-        for id in collected_ids[::-1]:
-            self.saved_posts_id.append(id)
-        while len(self.saved_posts_id) > MAX_RECENT_LIKES:
-            self.saved_posts_id.popleft()
+        for id in collected_tweet_ids[::-1]:
+            saved_posts_id.append(id)
+        while len(saved_posts_id) > MAX_RECENT_IDS:
+            saved_posts_id.popleft()
 
         # save recent likes
-        localstorage.save_recent_ids(self.saved_posts_id) 
+        localstorage.save_recent_ids(saved_posts_id) 
 
-        # save posts
+        return collected_tweets
+
+    def _autolike_posts(self, max_post_num):
+        driver = self.driver
+
+        for user in self.autolike_users:
+            print(f"Fetching latest tweets from {user}...")
+            user_url = f"https://twitter.com/{user}"
+            driver.get(user_url)
+            time.sleep(5)
+
+            collected_tweet_ids = []
+            scroll_attempts = 0
+            max_scrolls = 50
+            get_new = True
+
+            while get_new and len(collected_tweet_ids) < max_post_num and scroll_attempts < max_scrolls:
+                tweets = driver.find_elements(By.XPATH, '//article[@data-testid="tweet"]')
+                get_new = False
+
+                for tweet in tweets:
+                    try:
+                        tweet_link = tweet.find_element(By.XPATH, './/a[contains(@href, "/status/")]').get_attribute("href")
+                        tweet_id = tweet_link.split("/")[-1]
+                        print(f"Checking tweet {tweet_id}")
+
+                        if tweet_id in collected_tweet_ids:
+                            continue
+
+                        try:   
+                            # click like button
+                            like_button = tweet.find_element(By.XPATH, './/button[@data-testid="like"]')
+                            if like_button:
+                                like_button.click()
+                                print(f"Liked tweet {tweet_id}")
+                        except:
+                            print("Already liked tweet")
+                            break
+
+                        get_new = True
+                        collected_tweet_ids.append(tweet_id)
+
+                    except Exception as e:
+                        print(f"Error processing tweet: {e}")
+                        continue
+
+                driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.PAGE_DOWN)
+                time.sleep(1)
+                scroll_attempts += 1
+
+            print(f"Finished liking tweets for {user}")
+
+    def _save_posts(self, collected_posts):
         localstorage.save_posts(collected_posts, self.save_path)
         
     def _smart_sleep(self, get_new):

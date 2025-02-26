@@ -13,5 +13,8 @@ bot:
   refresh_interval: 60.0  
   filter_tags: []
   trigger: like # like, bookmark
+  autolike: true
+  max_autolike_posts: 10
+  autolike_users: []
   save_path: "./data"
 
